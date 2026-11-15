@@ -1,12 +1,12 @@
-# Jewels Essence Hair Studio Website
+# Jewel Essence Hair Studio Website
 
-**Status**: Planning  
+**Status**: Approved  
 **Created**: 2026-11-15  
 **Mode**: Manual approval required before scaffolding  
 
 ## 1. Project Summary
 
-Create a polished, responsive hairdresser website for Jewels Essence Hair Studio. The public experience has Home, Pricelist, Gallery, and Contact Us pages. A deliberately unobtrusive footer link opens a private hairdresser login. The authenticated operator can edit the pricelist and change her password. Gallery images are synchronized daily from the studio's Instagram account, while the public site remains fast and independent of live Instagram availability.
+Create a polished, responsive hairdresser website for Jewel Essence Hair Studio. The public experience has Home, Pricelist, Gallery, and Contact Us pages. A deliberately unobtrusive footer link opens a private hairdresser login. The authenticated operator can edit the pricelist and change her password. Gallery images are synchronized daily from the studio's Instagram account, while the public site remains fast and independent of live Instagram availability.
 
 The repository currently contains only a README and Git metadata; there is no existing application, infrastructure, database schema, or CI pipeline to preserve.
 
@@ -17,15 +17,15 @@ The repository currently contains only a README and Git metadata; there is no ex
 - Deliver an elegant, classy, minimalist Angular website with strong mobile and desktop layouts.
 - Provide a Python FastAPI API and a separate scheduled Python scraper worker.
 - Make public content read-only and available without login.
-- Provide secure email/password administration for pricelist editing and password changes.
-- Keep gallery images locally/privately stored and serve optimized derivatives.
+- Provide secure phone-number/password administration for pricelist editing, business-settings editing, and password changes.
+- Keep gallery images locally/privately stored and serve them at near-original Instagram dimensions and quality.
 - Build, test, containerize, and deploy reproducibly through GitHub Actions.
 
 ### In scope
 
 - Home, Pricelist, Gallery, Contact Us, login, admin pricelist editor, and password-change screens.
-- Contact details, external links, map image, social link, booking link, and dynamic `© Xertz Industries <current year>` footer.
-- PostgreSQL persistence, object/blob media storage, migrations, API documentation, health checks, scrape audit records, and observability hooks.
+- Contact details, external links, map image, social link, booking link, editable business settings, and dynamic `© Xertz Industries <current year>` footer.
+- PostgreSQL persistence, Droplet-backed media storage, migrations, API documentation, health checks, scrape audit records, and observability hooks.
 - Daily scheduled Instagram synchronization using `drawrowfly/instagram-scraper`, subject to legal and operational approval.
 
 ### Out of scope
@@ -38,7 +38,7 @@ The repository currently contains only a README and Git metadata; there is no ex
 1. All public routes render responsively and meet keyboard, focus, semantic HTML, and WCAG-oriented contrast requirements.
 2. Public pricelist and gallery data load from the API, with graceful loading/error/empty states.
 3. Only an authenticated hairdresser can create, edit, reorder, publish/unpublish, or archive pricelist categories/items.
-4. Passwords are hashed; login has rate limiting, secure cookies, CSRF protection as applicable, and generic failure messages.
+4. Passwords are hashed; phone-number login has rate limiting, secure cookies, CSRF protection as applicable, and generic failure messages.
 5. A daily worker run is idempotent, records a run outcome, deduplicates media, and does not break the public site when Instagram is unavailable.
 6. CI runs linting, unit tests, API tests, frontend tests, build, container build, and vulnerability checks.
 
@@ -46,21 +46,38 @@ The repository currently contains only a README and Git metadata; there is no ex
 
 ### Assumptions
 
-- The requested business is Jewels Essence Hair Studio and the Instagram account is public and authorized for this use.
-- One administrator account is sufficient for the first release.
-- DigitalOcean Managed PostgreSQL and S3-compatible object storage are appropriate; DigitalOcean Spaces is the recommended production media store.
-- The map image will be supplied by the owner or generated from a licensed/static-map provider; no unlicensed screenshot will be committed.
+- The requested business is Jewel Essence Hair Studio and the Instagram account is public and authorized for this use.
+- One administrator account is sufficient for the first release, authenticated by phone number and password rather than email.
+- DigitalOcean Managed PostgreSQL and the Droplet's persistent disk are appropriate for the expected small gallery volume. Store downloaded images and generated video thumbnails on the server; do not retain full video files.
+- The owner has supplied the logo and a map image for the Contact Us page. The production assets must be stored locally with appropriate permission/attribution rather than relying on an expiring Instagram CDN URL.
 - Square's page is the authoritative reference for initial service names/prices only after the owner confirms permission and currency/tax conventions.
 - The booking URL can be linked externally; no Square credentials or private API access are needed.
 
 ### Decisions needing user approval before implementation
 
-- Exact business address, phone, email, opening hours, social links, booking URL, logo, brand colors, typography, and map asset.
-- Initial admin email and a secure bootstrap-password delivery process.
-- Whether to store downloaded Instagram originals or only resized derivatives, maximum gallery count, retention period, and whether captions/alt text may be displayed.
+- Whether the scraper may use Instagram credentials/session cookies. **Approved decision**: no credentials and public-only scraping.
+
+### Deferred until deployment
+
 - Droplet sizing, region, firewall rules, and whether the frontend is served from the Droplet or another static host.
-- Whether the scraper may use Instagram credentials/session cookies. Default recommendation is no credentials and public-only scraping.
-- Whether to use a managed WAF/CDN and custom domain in the first release.
+- Managed WAF/CDN configuration and custom-domain routing.
+- Production deployment, backups, monitoring, and release topology.
+
+The first implementation phase is local-first: run the Angular frontend, FastAPI API, PostgreSQL, media volume, and scraper worker with Docker Compose on the developer machine. Deployment decisions will be finalized after the local site is working and reviewed.
+
+### Confirmed business content
+
+- **Business**: Jewel Essence Hair Studio.
+- **Address**: 415 Wick Lane, London, United Kingdom, E3 2JG.
+- **Phone**: +44 7792 629696.
+- **Opening hours**: Monday-Saturday, 09:00-19:00; Sunday closed.
+- **Instagram**: `https://www.instagram.com/jewelessencehairstudio/`.
+- **Booking**: `https://book.squareup.com/appointments/8y0zkj85bj0rtj/location/LHHZMSJAZWKWF/services`.
+- **Email**: blank initially; editable later through the staff settings screen.
+- **Initial admin**: use `+44 7792 629696` as the login phone number; bootstrap the account through protected GitHub Actions secrets and require a password change after first login.
+- **Brand direction**: black and white, based on the supplied logo, with logo-inspired editorial typography and restrained styling.
+- **Map**: use the supplied map image on the Contact Us page, with attribution or licensing retained if required.
+- **Gallery policy**: retain up to 1,000 gallery assets; download every image in a carousel; preserve image dimensions as supplied by Instagram without upscaling or aggressive recompression; generate one thumbnail per video at the source aspect ratio and a similar quality level; do not retain full videos, scrape captions, or create gallery alt-text metadata.
 
 ## 4. Architecture & Service Boundaries
 
@@ -68,31 +85,31 @@ The repository currently contains only a README and Git metadata; there is no ex
 
 1. **Angular frontend**: static production bundle served by Nginx or a static-hosting service; communicates only with versioned HTTPS API endpoints.
 2. **FastAPI backend**: public read APIs, admin authentication, protected pricelist mutation APIs, site configuration, media URLs, scrape status, and health/readiness endpoints.
-3. **Python scraper worker**: scheduled container/command using `drawrowfly/instagram-scraper`; downloads approved public media, validates content, stores blobs and metadata, and writes audit results.
+3. **Python scraper worker**: scheduled container/command using `drawrowfly/instagram-scraper`; downloads every approved image in each carousel, generates one thumbnail for each approved video without retaining the full video, validates media, stores files and metadata, removes the oldest assets when the 1,000-asset limit is exceeded, and writes audit results.
 4. **PostgreSQL**: relational source of truth for users, pricelist, configuration, gallery metadata, and job runs.
-5. **Blob/object storage**: private originals/derivatives; API returns short-lived signed URLs or an image proxy.
+5. **Droplet media volume**: persistent, non-public image files and generated video thumbnails mounted into the API/worker containers. The API serves media through an allow-listed route or Nginx, never by exposing arbitrary filesystem paths.
 
 ### Request and data flow
 
 - Browser → HTTPS reverse proxy → Angular static assets.
-- Browser → HTTPS `/api/v1` → FastAPI → PostgreSQL/blob storage.
-- Scheduler → scraper container → Instagram (outbound only) → blob storage/PostgreSQL.
+- Browser → HTTPS `/api/v1` → FastAPI → PostgreSQL and the private Droplet media volume.
+- Scheduler → scraper container → Instagram (outbound only) → Droplet media volume/PostgreSQL.
 - API never proxies arbitrary external URLs; it returns allow-listed media references.
 
 ### Recommended production topology
 
-A hardened DigitalOcean Droplet running Docker Compose for the Angular frontend, FastAPI API, and scheduled scraper worker; DigitalOcean Managed PostgreSQL for relational data; and DigitalOcean Spaces for private gallery originals/derivatives. Publish versioned images to GitHub Container Registry or DigitalOcean Container Registry. Use Cloudflare DNS and proxying for `jewelessencehairstudio.co.uk`, with HTTPS, caching, WAF/rate limiting where appropriate, and separate `www` and `api` hostnames routed to the Droplet. Run the worker through a host-managed cron or systemd timer that invokes a one-shot worker container, with locking to prevent overlapping runs. Store secrets in protected GitHub Actions environments for deployment and in a root-readable Droplet environment/secrets file outside the repository; rotate deployment credentials and restrict firewall access to SSH, HTTP, and HTTPS.
+A hardened DigitalOcean Droplet running Docker Compose for the Angular frontend, FastAPI API, and scheduled scraper worker; DigitalOcean Managed PostgreSQL for relational data; and a dedicated persistent media directory on the Droplet for approved images and generated video thumbnails. Publish versioned images to GitHub Container Registry or DigitalOcean Container Registry. Use Cloudflare DNS and proxying for `jewelessencehairstudio.co.uk`, with HTTPS, caching, WAF/rate limiting where appropriate, and separate `www` and `api` hostnames routed to the Droplet. Run the worker through a host-managed cron or systemd timer that invokes a one-shot worker container, with locking to prevent overlapping runs. Set disk quotas/alerts and scheduled backups for the media directory. Store secrets in protected GitHub Actions environments for deployment and in a root-readable Droplet environment/secrets file outside the repository; rotate deployment credentials and restrict firewall access to SSH, HTTP, and HTTPS.
 
 ## 5. Data Model & API Contract
 
 ### Core tables
 
-- `admin_users`: `id`, `email`, `password_hash`, `role`, `is_active`, `created_at`, `updated_at`, `last_login_at`, `password_changed_at`.
+- `admin_users`: `id`, `phone_number`, `password_hash`, `role`, `is_active`, `created_at`, `updated_at`, `last_login_at`, `password_changed_at`.
 - `refresh_tokens` (or server-side sessions): hashed token/session ID, user, expiry, revocation timestamp, device metadata.
 - `pricelist_categories`: `id`, `name`, `description`, `sort_order`, `is_published`, timestamps.
 - `pricelist_items`: `id`, category ID, name, description, duration_minutes, price_minor, currency, sort_order, is_published, timestamps.
-- `site_settings`: singleton/key-value records for address, phone, email, hours, links, map blob key, and booking URL.
-- `gallery_items`: stable Instagram media ID, permalink, caption, published timestamp, blob keys, width/height, checksum, alt text, visibility, timestamps.
+- `site_settings`: singleton/key-value records for business name, address, phone, optional email, opening hours, social links, map media path, logo media path, brand settings, and booking URL.
+- `gallery_items`: stable Instagram media ID plus carousel item key, media type, permalink, published timestamp, image path, thumbnail path, width/height, file size, checksum, visibility, timestamps. Carousel items retain their source ordering and are removed together where possible.
 - `scrape_runs`: start/end, status, counts, error summary, scraper version, source account, timestamps.
 - `audit_events`: actor, action, resource, request correlation ID, timestamp; never store passwords or session secrets.
 
@@ -109,7 +126,7 @@ Public:
 
 Authentication:
 
-- `POST /api/v1/auth/login`
+- `POST /api/v1/auth/login` (phone number and password)
 - `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/change-password`
@@ -121,6 +138,7 @@ Protected admin:
 - `GET/POST /api/v1/admin/pricelist/items`
 - `PATCH/DELETE /api/v1/admin/pricelist/items/{id}`
 - `POST /api/v1/admin/pricelist/reorder`
+- `GET/PATCH /api/v1/admin/site-settings`
 - `GET /api/v1/admin/scrape-runs`
 - `POST /api/v1/admin/scrape-runs` (manual run, rate-limited)
 
@@ -130,9 +148,9 @@ Return consistent problem-details errors, OpenAPI schemas, pagination metadata, 
 
 **Component Library**: Angular Material (customized theme)  
 **Visual direction**: Elegant, restrained, editorial, generous whitespace, warm neutrals, charcoal text, one muted metallic/accent color, fine borders, and high-quality image cropping. Avoid excessive animation and visual clutter.  
-**Typography**: Pair a refined display serif with a highly legible sans-serif body font; self-host or use a properly licensed provider.  
+**Typography**: Use a refined, logo-compatible display treatment with a highly legible sans-serif body font; self-host or use a properly licensed provider. Final font selection should be validated against the supplied black-and-white logo.
 **Layout**: Mobile-first responsive grid, max-width content container, sticky/compact header, prominent but calm calls to action, and consistent vertical rhythm.  
-**Accessibility**: Visible focus rings, skip link, semantic headings, reduced-motion support, alt text from curated metadata, keyboard-operable dialogs/forms, and adequate contrast.  
+**Accessibility**: Visible focus rings, skip link, semantic headings, reduced-motion support, appropriate `alt` handling for the logo/map, empty `alt` attributes for gallery images where no descriptive text is provided, keyboard-operable dialogs/forms, and adequate contrast.
 **Component Library Defaults**: Angular Material components for buttons, navigation, cards, tables, dialogs, snackbars, form fields, menus, progress indicators, and responsive sidenav; use CSS for brand-specific composition rather than raw repeated controls.
 
 ### Frontend routes and components
@@ -143,27 +161,28 @@ Return consistent problem-details errors, OpenAPI schemas, pagination metadata, 
 - `/contact`: `ContactPage`, details, hours, social/booking links, accessible map image and attribution.
 - `/staff/login`: `StaffLoginPage`; reachable only from a low-emphasis footer link and direct URL.
 - `/staff/pricelist`: `PricelistEditorPage`, category/item CRUD, reorder, publish state, optimistic-safe save feedback.
+- `/staff/settings`: `SiteSettingsPage`, business name/address/phone/email, opening hours, social links, booking URL, logo, and map asset references.
 - `/staff/password`: `ChangePasswordPage`, current/new/confirmation validation, logout-after-change policy.
 
 Shared components: `SiteHeader`, `SiteFooter`, `BookingButton`, `LoadingState`, `ErrorState`, `ConfirmDialog`, `ImageLightbox`, `AuthGuard`, `UnsavedChangesGuard`, and API/interceptor services.
 
 ## 7. Security, Privacy & Operational Risks
 
-- Hash passwords with Argon2id/bcrypt; never log credentials. Bootstrap the first account through a one-time secret or operator CLI.
+- Hash passwords with Argon2id/bcrypt; never log credentials. Use protected GitHub Actions secrets for the one-time initial admin phone number and bootstrap password, pass them only to a controlled bootstrap/migration command, require a password change after first login, and never bake them into images or committed configuration.
 - Prefer secure, HttpOnly, SameSite cookies with short-lived sessions, CSRF tokens, rotation/revocation, and HTTPS-only production cookies. If stateless tokens are selected, use short-lived access tokens and rotated refresh tokens stored hashed.
 - Rate-limit login/manual scrape routes, enforce generic login errors, add lockout/backoff, validate all input server-side, and configure strict CORS, CSP, HSTS, frame and MIME protections.
-- Keep database, Spaces, session, and scraper credentials in a root-readable Droplet secrets file outside the repository, with GitHub Actions protected-environment secrets limited to deployment. No secrets may appear in the repository, Docker layers, logs, or frontend bundles. Prefer narrowly scoped deployment credentials, firewall-restricted SSH keys, and regular credential rotation. Do not expose PostgreSQL directly to the public internet; allow only the Droplet's private/network access and an explicitly controlled administrator path.
+- Keep database, session, and scraper credentials in a root-readable Droplet secrets file outside the repository, with GitHub Actions protected-environment secrets limited to deployment. No secrets may appear in the repository, Docker layers, logs, or frontend bundles. Prefer narrowly scoped deployment credentials, firewall-restricted SSH keys, and regular credential rotation. Do not expose PostgreSQL directly to the public internet; allow only the Droplet's private/network access and an explicitly controlled administrator path.
 - Instagram scraping can violate Instagram terms, robots expectations, rate limits, or account rules; obtain owner/legal approval, use public data only by default, throttle, cache, identify the user agent, provide a kill switch, and be prepared to replace it with an approved feed/API.
 - Scraped media/captions and the map image may have copyright/privacy restrictions. Store only approved media, preserve attribution where required, obtain map-image license/attribution, and support takedown/deletion.
 - Square content may change; do not scrape it in production without permission. Treat manual entry/import as the source of truth and link to Square for booking.
-- Defend image processing against oversized files, malformed content, SSRF, path traversal, and decompression bombs; enforce MIME/size limits and malware scanning if uploads are later added.
+- Defend image and thumbnail processing against oversized files, malformed content, SSRF, path traversal, decompression bombs, and unbounded disk usage; enforce MIME, duration, and size limits, generate thumbnails in an isolated worker, and malware-scan if uploads are later added.
 
 ## 8. Testing & Quality Plan
 
 - Backend unit tests for pricing validation, auth/session policy, authorization, scraper deduplication, retry/backoff, and settings.
-- API integration tests with disposable PostgreSQL and blob emulator; contract tests generated from OpenAPI.
+- API integration tests with disposable PostgreSQL and a temporary local media directory; contract tests generated from OpenAPI.
 - Angular unit/component tests, route-guard tests, HTTP interceptor tests, and Playwright end-to-end tests for public navigation, login, edit, password change, and error states.
-- Worker tests with mocked Instagram responses, fixture media, rate-limit/error scenarios, idempotent reruns, and retention.
+- Worker tests with mocked Instagram responses, multi-image carousel fixtures, video-thumbnail fixtures, rate-limit/error scenarios, idempotent reruns, the 1,000-asset limit, and retention cleanup.
 - Accessibility checks with axe/Playwright; responsive smoke tests at mobile/tablet/desktop breakpoints.
 - CI security scans for dependencies, containers, secrets, and static analysis; backup/restore and migration rehearsal before production.
 
@@ -171,7 +190,7 @@ Shared components: `SiteHeader`, `SiteFooter`, `BookingButton`, `LoadingState`, 
 
 ### Local development
 
-Provide `docker-compose.yml` for PostgreSQL, an S3-compatible local object store such as MinIO, API, worker, and optional frontend dev proxy. Include `.env.example` containing placeholders only, Make/PowerShell-friendly commands, Alembic migration commands, seed-free bootstrap-admin command, and documented test commands. Angular uses `ng serve`; FastAPI uses Uvicorn reload; worker supports a one-shot local scrape against fixtures/mock mode.
+Provide `docker-compose.yml` for PostgreSQL, a persistent local media volume, API, worker, and optional frontend dev proxy. Include `.env.example` containing placeholders only, Make/PowerShell-friendly commands, Alembic migration commands, seed-free bootstrap-admin command, and documented test commands. Angular uses `ng serve`; FastAPI uses Uvicorn reload; worker supports a one-shot local scrape against fixtures/mock mode and video-thumbnail generation.
 
 ### CI/CD
 
@@ -189,13 +208,13 @@ GitHub Actions should run on pull requests and protected-branch pushes:
 
 ### Options
 
-1. **Recommended**: DigitalOcean Droplet running Docker Compose + Managed PostgreSQL + Spaces + GitHub Actions, with Cloudflare DNS/proxy for `jewelessencehairstudio.co.uk`. This supports the API, frontend, and scheduled worker on one controlled host.
+1. **Recommended**: DigitalOcean Droplet running Docker Compose + Managed PostgreSQL + persistent local media + GitHub Actions, with Cloudflare DNS/proxy for `jewelessencehairstudio.co.uk`. This supports the API, frontend, and scheduled worker on one controlled host without introducing a separate media service.
 2. **Alternative**: A separate Droplet for the worker or frontend if resource usage, isolation, or availability requirements grow. This adds cost and operational complexity but reduces contention between workloads.
 3. **Portable**: Any Docker host with managed PostgreSQL/object storage and cron. Lowest DigitalOcean coupling, but more responsibility for deployment, TLS, secrets, backups, and monitoring.
 
 ### Milestones
 
-1. Confirm assumptions/assets, legal approval for Instagram/map, production option, and initial content.
+1. Confirm remaining assumptions, legal approval for Instagram/map, production option, and initial admin phone/bootstrap process; import the supplied logo and map assets.
 2. Scaffold repository structure and Docker Compose; create migrations and API contract.
 3. Implement API/auth/admin and Angular public/admin routes.
 4. Implement gallery storage, worker, retention, and audit/status UI.
@@ -204,4 +223,4 @@ GitHub Actions should run on pull requests and protected-branch pushes:
 
 ### Definition of ready for scaffold
 
-This plan is implementation-ready once the user confirms the decisions in Section 3, supplies brand/contact/map details, and explicitly approves this plan. The next agent must read this file and scaffold only after approval; it must not silently introduce a contact form, live Square integration, Instagram credentials, or unsupported identity provider.
+This plan is implementation-ready once the user confirms the remaining decisions in Section 3 and explicitly approves this plan. The next agent must read this file and scaffold only after approval; it must not silently introduce a contact form, live Square integration, Instagram credentials, email-based authentication, or unsupported identity provider.

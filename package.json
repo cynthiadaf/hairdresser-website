@@ -1,0 +1,8 @@
+{
+  "name": "jewel-essence-hair-studio",
+  "private": true,
+  "scripts": {
+    "test": "npm --prefix frontend test -- --watch=false",
+    "build": "npm --prefix frontend run build"
+  }
+}
