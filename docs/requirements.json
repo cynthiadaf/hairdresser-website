@@ -1,0 +1,182 @@
+{
+  "projectName": "Jewels Essence Hair Studio website",
+  "status": "inferred",
+  "services": [
+    {
+      "serviceId": "frontend",
+      "name": "Public website and private admin UI",
+      "type": "frontend",
+      "language": {
+        "header": "Frontend language",
+        "question": "Which language should the Angular frontend use?",
+        "multiSelect": false,
+        "recommendedChoice": "TypeScript",
+        "answer": "TypeScript",
+        "options": [
+          {
+            "label": "TypeScript",
+            "description": "Angular's standard typed language for maintainable browser applications."
+          },
+          {
+            "label": "JavaScript",
+            "description": "Angular frontend implemented without TypeScript type checking."
+          }
+        ],
+        "allowFreeformInput": false
+      },
+      "framework": {
+        "header": "Frontend framework",
+        "question": "Which framework should power the frontend?",
+        "multiSelect": false,
+        "recommendedChoice": "Angular",
+        "answer": "Angular",
+        "options": [
+          {
+            "label": "Angular",
+            "description": "Component-based frontend with routing, forms, and HTTP client support."
+          }
+        ],
+        "allowFreeformInput": true
+      },
+      "features": {
+        "header": "Frontend features",
+        "question": "Describe the required frontend pages and interactions.",
+        "multiSelect": false,
+        "answer": "Elegant, classy, minimalist public Home, Pricelist, Gallery, and Contact Us pages; hidden footer entry point to email/password hairdresser login; authenticated pricelist editing and password-change UI; responsive accessibility-focused layout; contact details, links, and map image with no contact form; dynamic copyright year.",
+        "recommendedChoice": "Public marketing pages plus a private authenticated editor",
+        "allowFreeformInput": true
+      }
+    },
+    {
+      "serviceId": "backend",
+      "name": "Website API",
+      "type": "backend",
+      "language": {
+        "header": "Backend language",
+        "question": "Which language should the API use?",
+        "multiSelect": false,
+        "recommendedChoice": "Python",
+        "answer": "Python",
+        "options": [
+          {
+            "label": "Python",
+            "description": "Python backend language requested for the FastAPI service."
+          }
+        ],
+        "allowFreeformInput": false
+      },
+      "framework": {
+        "header": "Backend framework",
+        "question": "Which framework should power the backend API?",
+        "multiSelect": false,
+        "recommendedChoice": "FastAPI",
+        "answer": "FastAPI",
+        "options": [
+          {
+            "label": "Azure Functions",
+            "description": "Managed serverless API framework."
+          }
+        ],
+        "allowFreeformInput": true
+      },
+      "features": {
+        "header": "Backend features",
+        "question": "Describe the API and authentication behavior.",
+        "multiSelect": false,
+        "answer": "FastAPI JSON API for public pricelist, gallery, contact configuration, email/password login, session or token validation, pricelist CRUD, password change, health checks, and scraper administration/status.",
+        "recommendedChoice": "FastAPI with secure cookie-based sessions and role-protected admin routes",
+        "allowFreeformInput": true
+      }
+    },
+    {
+      "serviceId": "scraper",
+      "name": "Daily Instagram gallery worker",
+      "type": "worker",
+      "language": {
+        "header": "Worker language",
+        "question": "Which language should the daily gallery scraper use?",
+        "multiSelect": false,
+        "recommendedChoice": "Python",
+        "answer": "Python",
+        "options": [
+          {
+            "label": "Python",
+            "description": "Reuse the backend ecosystem and the requested instagram-scraper package."
+          }
+        ],
+        "allowFreeformInput": false
+      },
+      "framework": {
+        "header": "Worker framework",
+        "question": "Which worker approach should run the daily scrape?",
+        "multiSelect": false,
+        "recommendedChoice": "Scheduled Python worker",
+        "answer": "Scheduled Python worker",
+        "options": [
+          {
+            "label": "Scheduled Python worker",
+            "description": "Containerized scheduled process using the instagram-scraper package."
+          }
+        ],
+        "allowFreeformInput": true
+      },
+      "features": {
+        "header": "Worker features",
+        "question": "Describe the daily gallery synchronization behavior.",
+        "multiSelect": false,
+        "answer": "Daily idempotent scrape of https://www.instagram.com/jewelessencehairstudio/?hl=en using https://github.com/drawrowfly/instagram-scraper; validate, deduplicate, retain a bounded gallery, persist metadata and downloaded media, and expose scrape status/errors.",
+        "recommendedChoice": "Daily scheduled scrape with retries, rate limiting, audit logs, and manual re-run capability",
+        "allowFreeformInput": true
+      }
+    }
+  ],
+  "sharedQuestions": [
+    {
+      "header": "Data stores",
+      "question": "Which data stores are required?",
+      "multiSelect": true,
+      "recommendedChoice": [
+        "PostgreSQL",
+        "Blob Storage"
+      ],
+      "answer": [
+        "PostgreSQL",
+        "Blob Storage"
+      ],
+      "options": [
+        {
+          "label": "PostgreSQL",
+          "description": "Pricelist, admin account, gallery metadata, scrape runs, and site configuration."
+        },
+        {
+          "label": "Blob Storage",
+          "description": "Downloaded Instagram gallery images and the map image asset."
+        },
+        {
+          "label": "No datastore required",
+          "description": "Use only if the application has no persistence or file/media storage.",
+          "exclusive": true
+        }
+      ],
+      "allowFreeformInput": false
+    },
+    {
+      "header": "Authentication",
+      "question": "Do users need to sign in for application API features?",
+      "multiSelect": false,
+      "recommendedChoice": "Yes",
+      "answer": "Yes",
+      "options": [
+        {
+          "label": "Yes",
+          "description": "Hairdresser signs in to edit the pricelist and change the password."
+        },
+        {
+          "label": "No",
+          "description": "All application features are public."
+        }
+      ],
+      "allowFreeformInput": false
+    }
+  ]
+}

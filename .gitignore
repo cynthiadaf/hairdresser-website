@@ -151,6 +151,8 @@ activemq-data/
 
 # Environments
 .env
+.env.*
+!.env.example
 .envrc
 .venv
 env/
@@ -158,6 +160,29 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+
+# Node / Angular
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.angular/cache/
+dist/
+
+# Test and coverage output
+coverage/
+test-results/
+playwright-report/
+
+# Local application and scraper data
+local-data/
+local-media/
+scraper-data/
+*.sqlite3
+
+# Docker and local runtime logs
+*.log
 
 # Spyder project settings
 .spyderproject
