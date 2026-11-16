@@ -1,6 +1,6 @@
 """Public-only, idempotent gallery synchronisation worker."""
 
-from itertools import islice
+import json
 import os
 from io import BytesIO
 from dataclasses import dataclass
@@ -8,14 +8,17 @@ from hashlib import sha256
 from pathlib import Path
 from time import sleep
 from typing import Callable
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
-import instaloader
 from PIL import Image
 from sqlalchemy import create_engine, text
 
 MAX_ASSETS = 1000
 DEFAULT_INTERVAL_SECONDS = 24 * 60 * 60
+APIFY_API_URL = "https://api.apify.com/v2"
+APIFY_POLL_INTERVAL_SECONDS = 5
+APIFY_MAX_WAIT_SECONDS = 15 * 60
 
 
 @dataclass(frozen=True)
@@ -43,54 +46,110 @@ def retain_newest(paths: list[Path], limit: int = MAX_ASSETS) -> list[Path]:
     return sorted(paths, key=lambda path: path.stat().st_mtime, reverse=True)[:limit]
 
 
-def _post_records(post: instaloader.Post) -> list[dict[str, object]]:
-    if post.typename == "GraphSidecar":
-        records: list[dict[str, object]] = []
-        for index, node in enumerate(post.get_sidecar_nodes()):
-            media_type = "video" if node.is_video else "image"
-            source_url = node.video_url if node.is_video else node.display_url
-            if not source_url:
-                continue
-            records.append(
-                {
-                    "media_id": f"{post.mediaid}_{index}",
-                    "media_type": media_type,
-                    "source_url": source_url,
-                    "thumbnail_url": node.display_url if node.is_video else None,
-                    "width": 0,
-                    "height": 0,
-                }
-            )
-        return records
+def _apify_request(
+    method: str, url: str, token: str, payload: dict[str, object] | None = None
+) -> dict[str, object] | list[object]:
+    request_data = json.dumps(payload).encode() if payload is not None else None
+    request = Request(
+        f"{url}?{urlencode({'token': token})}",
+        data=request_data,
+        headers={"Content-Type": "application/json"},
+        method=method,
+    )
+    with urlopen(request, timeout=60) as response:
+        result = json.loads(response.read())
+    return result["data"] if isinstance(result, dict) and "data" in result else result
 
-    media_type = "video" if post.is_video else "image"
-    source_url = post.video_url if post.is_video else post.url
-    if not source_url:
-        return []
-    return [
-        {
-            "media_id": str(post.mediaid),
-            "media_type": media_type,
-            "source_url": source_url,
-            "thumbnail_url": post.url if post.is_video else None,
-            "width": 0,
-            "height": 0,
-        }
-    ]
+
+def _apify_records(item: dict[str, object]) -> list[dict[str, object]]:
+    post_id = str(item.get("id") or item.get("pk") or item.get("shortCode") or "")
+    children = item.get("childPosts") or item.get("images")
+    posts = children if isinstance(children, list) and children else [item]
+    records: list[dict[str, object]] = []
+
+    for index, post in enumerate(posts):
+        if not isinstance(post, dict):
+            continue
+        video_url = post.get("videoUrl") or post.get("video_url")
+        image_url = post.get("displayUrl") or post.get("display_url")
+        thumbnail_url = (
+            post.get("thumbnailUrl") or post.get("thumbnail_url") or image_url
+            if video_url
+            else None
+        )
+        media_type = "video" if video_url else "image"
+        source_url = video_url or image_url
+        if not source_url:
+            continue
+        media_id = post.get("id") or post.get("pk") or post.get("shortCode")
+        records.append(
+            {
+                "media_id": str(media_id or f"{post_id}_{index}"),
+                "media_type": media_type,
+                "source_url": str(source_url),
+                "thumbnail_url": str(thumbnail_url) if thumbnail_url else None,
+                "width": int(post.get("width") or 0),
+                "height": int(post.get("height") or 0),
+            }
+        )
+    return records
 
 
 def _scraper_records() -> list[dict[str, object]]:
     username = os.getenv("INSTAGRAM_USERNAME", "jewelessencehairstudio")
     count = int(os.getenv("INSTAGRAM_COUNT", "40"))
-    loader = instaloader.Instaloader(
-        download_pictures=False,
-        download_videos=False,
-        quiet=True,
+    token = os.getenv("APIFY_API_TOKEN")
+    if not token:
+        raise ValueError("APIFY_API_TOKEN must be set when the scraper is enabled")
+    actor_id = os.getenv("APIFY_ACTOR_ID", "apify/instagram-scraper")
+    actor_url = f"{APIFY_API_URL}/acts/{quote(actor_id, safe='')}"
+    run = _apify_request(
+        "POST",
+        f"{actor_url}/runs",
+        token,
+        {
+            "directUrls": [f"https://www.instagram.com/{username}/"],
+            "resultsType": "posts",
+            "resultsLimit": count,
+        },
     )
-    profile = instaloader.Profile.from_username(loader.context, username)
+    if not isinstance(run, dict):
+        raise ValueError("Apify returned an invalid actor run response")
+    run_id = run.get("id")
+    dataset_id = run.get("defaultDatasetId")
+    if not isinstance(run_id, str) or not isinstance(dataset_id, str):
+        raise ValueError("Apify actor run response did not include run and dataset IDs")
+
+    elapsed = 0
+    while True:
+        status_response = _apify_request(
+            "GET", f"{APIFY_API_URL}/actor-runs/{quote(run_id, safe='')}", token
+        )
+        if not isinstance(status_response, dict):
+            raise ValueError("Apify returned an invalid actor status response")
+        status = status_response.get("status")
+        if status == "SUCCEEDED":
+            break
+        if status in {"FAILED", "ABORTED", "TIMED-OUT"}:
+            raise RuntimeError(f"Apify actor run ended with status {status}")
+        if elapsed >= APIFY_MAX_WAIT_SECONDS:
+            raise TimeoutError("Apify actor run exceeded the maximum wait time")
+        sleep(APIFY_POLL_INTERVAL_SECONDS)
+        elapsed += APIFY_POLL_INTERVAL_SECONDS
+
+    dataset = _apify_request(
+        "GET",
+        f"{APIFY_API_URL}/datasets/{quote(dataset_id, safe='')}/items",
+        token,
+    )
+    if not isinstance(dataset, list):
+        raise ValueError("Apify returned an invalid dataset response")
+
     unique: dict[str, dict[str, object]] = {}
-    for post in islice(profile.get_posts(), count):
-        for record in _post_records(post):
+    for item in dataset:
+        if not isinstance(item, dict):
+            continue
+        for record in _apify_records(item):
             unique[str(record["media_id"])] = record
     return list(unique.values())
 

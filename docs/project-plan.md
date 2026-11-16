@@ -85,7 +85,7 @@ The first implementation phase is local-first: run the Angular frontend, FastAPI
 
 1. **Angular frontend**: static production bundle served by Nginx or a static-hosting service; communicates only with versioned HTTPS API endpoints.
 2. **FastAPI backend**: public gallery, media, health, and readiness APIs.
-3. **Python scraper worker**: scheduled container/command using `drawrowfly/instagram-scraper`; downloads every approved image in each carousel, generates one thumbnail for each approved video without retaining the full video, validates media, stores files and metadata, removes the oldest assets when the 1,000-asset limit is exceeded, and writes audit results.
+3. **Python scraper worker**: scheduled container/command using Apify's `apify/instagram-scraper` for public profile discovery; downloads every approved image in each carousel, generates one thumbnail for each approved video without retaining the full video, validates media, stores files and metadata, removes the oldest assets when the 1,000-asset limit is exceeded, and writes audit results.
 4. **PostgreSQL**: relational source of truth for gallery metadata and scrape-run records.
 5. **Droplet media volume**: persistent, non-public image files and generated video thumbnails mounted into the API/worker containers. The API serves media through an allow-listed route or Nginx, never by exposing arbitrary filesystem paths.
 

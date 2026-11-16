@@ -1,5 +1,4 @@
 SQLAlchemy==2.0.36
 psycopg[binary]==3.2.3
 pillow==11.1.0
-instaloader==4.16
 pytest==8.3.4

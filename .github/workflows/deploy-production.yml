@@ -45,6 +45,7 @@ jobs:
           DO_HOST: ${{ secrets.DO_HOST }}
           DO_USER: ${{ secrets.DO_USER }}
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
           ROOT_DOMAIN: ${{ secrets.ROOT_DOMAIN }}
           CF_ORIGIN_CERT: ${{ secrets.CF_ORIGIN_CERT }}
           CF_ORIGIN_KEY: ${{ secrets.CF_ORIGIN_KEY }}
@@ -52,6 +53,7 @@ jobs:
           set -euo pipefail
 
           database_url_b64="$(printf '%s' "$DATABASE_URL" | base64 -w0)"
+          apify_token_b64="$(printf '%s' "$APIFY_API_TOKEN" | base64 -w0)"
           cf_cert_b64="$(printf '%s' "$CF_ORIGIN_CERT" | base64 -w0)"
           cf_key_b64="$(printf '%s' "$CF_ORIGIN_KEY" | base64 -w0)"
           nginx_conf_b64="$(base64 -w0 deploy/nginx.conf)"
@@ -60,6 +62,7 @@ jobs:
             -i "$HOME/.ssh/deploy_key" \
             "$DO_USER@$DO_HOST" \
             "DATABASE_URL_B64='$database_url_b64' \
+             APIFY_TOKEN_B64='$apify_token_b64' \
              ROOT_DOMAIN='$ROOT_DOMAIN' \
              CF_CERT_B64='$cf_cert_b64' \
              CF_KEY_B64='$cf_key_b64' \
@@ -96,11 +99,16 @@ jobs:
 
           {
             printf 'DATABASE_URL=%s\n' "$database_url"
+            printf 'APIFY_API_TOKEN=%s\n' \
+              "$(printf '%s' "$APIFY_TOKEN_B64" | base64 -d)"
             printf 'ROOT_DOMAIN=%s\n' "$ROOT_DOMAIN"
             printf 'API_CORS_ORIGINS=https://%s\n' "$ROOT_DOMAIN"
             printf 'MEDIA_ROOT=/data/media\n'
             printf 'SCRAPER_ENABLED=true\n'
-            printf 'SCRAPER_INTERVAL_SECONDS=86400\n'
+            printf 'APIFY_ACTOR_ID=apify/instagram-scraper\n'
+            printf 'INSTAGRAM_USERNAME=jewelessencehairstudio\n'
+            printf 'INSTAGRAM_COUNT=40\n'
+            printf 'SCRAPER_INTERVAL_SECONDS=604800\n'
           } > "$env_file"
           chmod 600 "$env_file"
 
