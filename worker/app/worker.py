@@ -1,19 +1,21 @@
 """Public-only, idempotent gallery synchronisation worker."""
 
-import json
+from itertools import islice
 import os
-import subprocess
-import tempfile
 from io import BytesIO
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from time import sleep
+from typing import Callable
 from urllib.request import Request, urlopen
 
+import instaloader
 from PIL import Image
 from sqlalchemy import create_engine, text
 
 MAX_ASSETS = 1000
+DEFAULT_INTERVAL_SECONDS = 24 * 60 * 60
 
 
 @dataclass(frozen=True)
@@ -41,60 +43,55 @@ def retain_newest(paths: list[Path], limit: int = MAX_ASSETS) -> list[Path]:
     return sorted(paths, key=lambda path: path.stat().st_mtime, reverse=True)[:limit]
 
 
-def _records(value: object, parent_id: str = "") -> list[dict[str, object]]:
-    found: list[dict[str, object]] = []
-    if isinstance(value, dict):
-        media_id = str(value.get("id") or parent_id)
-        source_url = value.get("display_url") or value.get("thumbnail_src")
-        if media_id and isinstance(source_url, str):
-            dimension = value.get("dimension") or {}
-            found.append(
+def _post_records(post: instaloader.Post) -> list[dict[str, object]]:
+    if post.typename == "GraphSidecar":
+        records: list[dict[str, object]] = []
+        for index, node in enumerate(post.get_sidecar_nodes()):
+            media_type = "video" if node.is_video else "image"
+            source_url = node.video_url if node.is_video else node.display_url
+            if not source_url:
+                continue
+            records.append(
                 {
-                    "media_id": media_id,
-                    "media_type": "video" if value.get("is_video") else "image",
+                    "media_id": f"{post.mediaid}_{index}",
+                    "media_type": media_type,
                     "source_url": source_url,
-                    "thumbnail_url": value.get("thumbnail_src"),
-                    "width": int(dimension.get("width") or 0),
-                    "height": int(dimension.get("height") or 0),
+                    "thumbnail_url": node.display_url if node.is_video else None,
+                    "width": 0,
+                    "height": 0,
                 }
             )
-        for child in value.values():
-            found.extend(_records(child, media_id))
-    elif isinstance(value, list):
-        for child in value:
-            found.extend(_records(child, parent_id))
-    return found
+        return records
 
-
-def _scraper_records(output_dir: Path) -> list[dict[str, object]]:
-    username = os.getenv("INSTAGRAM_USERNAME", "jewelessencehairstudio")
-    count = os.getenv("INSTAGRAM_COUNT", "40")
-    timeout = os.getenv("SCRAPER_TIMEOUT_MS", "1500")
-    command = [
-        os.getenv("INSTAGRAM_SCRAPER_BIN", "instatouch"),
-        "user",
-        username,
-        "--count",
-        count,
-        "--mediaType",
-        "all",
-        "--filetype",
-        "json",
-        "--filepath",
-        str(output_dir),
-        "--filename",
-        "feed",
-        "--timeout",
-        timeout,
+    media_type = "video" if post.is_video else "image"
+    source_url = post.video_url if post.is_video else post.url
+    if not source_url:
+        return []
+    return [
+        {
+            "media_id": str(post.mediaid),
+            "media_type": media_type,
+            "source_url": source_url,
+            "thumbnail_url": post.url if post.is_video else None,
+            "width": 0,
+            "height": 0,
+        }
     ]
-    subprocess.run(command, check=True, capture_output=True, text=True, timeout=300)
-    files = sorted(output_dir.glob("feed*.json"))
-    if not files:
-        raise RuntimeError("Instagram scraper did not produce JSON output")
-    payload = json.loads(files[-1].read_text(encoding="utf-8"))
+
+
+def _scraper_records() -> list[dict[str, object]]:
+    username = os.getenv("INSTAGRAM_USERNAME", "jewelessencehairstudio")
+    count = int(os.getenv("INSTAGRAM_COUNT", "40"))
+    loader = instaloader.Instaloader(
+        download_pictures=False,
+        download_videos=False,
+        quiet=True,
+    )
+    profile = instaloader.Profile.from_username(loader.context, username)
     unique: dict[str, dict[str, object]] = {}
-    for record in _records(payload):
-        unique[str(record["media_id"])] = record
+    for post in islice(profile.get_posts(), count):
+        for record in _post_records(post):
+            unique[str(record["media_id"])] = record
     return list(unique.values())
 
 
@@ -187,8 +184,7 @@ def run() -> ScrapeAudit:
 
     media_root = Path(os.getenv("MEDIA_ROOT", "/data/media"))
     try:
-        with tempfile.TemporaryDirectory(prefix="instagram-") as temporary_dir:
-            records = _scraper_records(Path(temporary_dir))
+        records = _scraper_records()
         stored: list[dict[str, object]] = []
         for record in records:
             media_path, thumbnail_path, width, height = _save_media(record, media_root)
@@ -218,5 +214,18 @@ def run() -> ScrapeAudit:
     return audit
 
 
+def run_forever(sleep_fn: Callable[[float], None] = sleep) -> None:
+    interval = int(os.getenv("SCRAPER_INTERVAL_SECONDS", str(DEFAULT_INTERVAL_SECONDS)))
+    if interval <= 0:
+        raise ValueError("SCRAPER_INTERVAL_SECONDS must be greater than zero")
+
+    while True:
+        run()
+        sleep_fn(interval)
+
+
 if __name__ == "__main__":
-    run()
+    if os.getenv("SCRAPER_RUN_ONCE", "false").lower() == "true":
+        run()
+    else:
+        run_forever()

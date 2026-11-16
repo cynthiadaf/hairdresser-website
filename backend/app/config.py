@@ -3,9 +3,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     database_url: str = "sqlite:///./local.db"
-    session_secret: str = "local-development-secret"
-    cookie_secure: bool = False
-    admin_phone: str = "+447792629696"
     media_root: str = "./media"
     api_cors_origins: str = "http://localhost:4200"
 

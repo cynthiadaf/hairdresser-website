@@ -39,6 +39,8 @@ services:
   worker:
     build: ./worker
     environment:
+      SCRAPER_ENABLED: "true"
+      SCRAPER_INTERVAL_SECONDS: ${SCRAPER_INTERVAL_SECONDS:-86400}
       DATABASE_URL: postgresql+psycopg://jewel_essence:${POSTGRES_PASSWORD:-change-me-locally}@db:5432/jewel_essence
       MEDIA_ROOT: /data/media
     volumes:

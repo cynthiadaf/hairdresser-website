@@ -84,9 +84,9 @@ The first implementation phase is local-first: run the Angular frontend, FastAPI
 ### Services
 
 1. **Angular frontend**: static production bundle served by Nginx or a static-hosting service; communicates only with versioned HTTPS API endpoints.
-2. **FastAPI backend**: public read APIs, admin authentication, protected pricelist mutation APIs, site configuration, media URLs, scrape status, and health/readiness endpoints.
+2. **FastAPI backend**: public gallery, media, health, and readiness APIs.
 3. **Python scraper worker**: scheduled container/command using `drawrowfly/instagram-scraper`; downloads every approved image in each carousel, generates one thumbnail for each approved video without retaining the full video, validates media, stores files and metadata, removes the oldest assets when the 1,000-asset limit is exceeded, and writes audit results.
-4. **PostgreSQL**: relational source of truth for users, pricelist, configuration, gallery metadata, and job runs.
+4. **PostgreSQL**: relational source of truth for gallery metadata and scrape-run records.
 5. **Droplet media volume**: persistent, non-public image files and generated video thumbnails mounted into the API/worker containers. The API serves media through an allow-listed route or Nginx, never by exposing arbitrary filesystem paths.
 
 ### Request and data flow
@@ -104,14 +104,8 @@ A hardened DigitalOcean Droplet running Docker Compose for the Angular frontend,
 
 ### Core tables
 
-- `admin_users`: `id`, `phone_number`, `password_hash`, `role`, `is_active`, `created_at`, `updated_at`, `last_login_at`, `password_changed_at`.
-- `refresh_tokens` (or server-side sessions): hashed token/session ID, user, expiry, revocation timestamp, device metadata.
-- `pricelist_categories`: `id`, `name`, `description`, `sort_order`, `is_published`, timestamps.
-- `pricelist_items`: `id`, category ID, name, description, duration_minutes, price_minor, currency, sort_order, is_published, timestamps.
-- `site_settings`: singleton/key-value records for business name, address, phone, optional email, opening hours, social links, map media path, logo media path, brand settings, and booking URL.
 - `gallery_items`: stable Instagram media ID plus carousel item key, media type, permalink, published timestamp, image path, thumbnail path, width/height, file size, checksum, visibility, timestamps. Carousel items retain their source ordering and are removed together where possible.
 - `scrape_runs`: start/end, status, counts, error summary, scraper version, source account, timestamps.
-- `audit_events`: actor, action, resource, request correlation ID, timestamp; never store passwords or session secrets.
 
 Use Alembic migrations, UTC timestamps, integer minor currency units, database constraints, indexes on published/sort fields and Instagram IDs, and soft deletion where auditability matters.
 
@@ -120,14 +114,7 @@ Use Alembic migrations, UTC timestamps, integer minor currency units, database c
 Public:
 
 - `GET /api/v1/health`, `GET /api/v1/ready`
-- `GET /api/v1/site-settings`
-- `GET /api/v1/pricelist`
 - `GET /api/v1/gallery?cursor=&limit=`
-
-Authentication:
-
-- `POST /api/v1/auth/login` (phone number and password)
-- `POST /api/v1/auth/logout`
 - `GET /api/v1/auth/me`
 - `POST /api/v1/auth/change-password`
 
@@ -159,19 +146,13 @@ Return consistent problem-details errors, OpenAPI schemas, pagination metadata, 
 - `/pricelist`: `PricelistPage`, category sections, service duration/price, Square booking link.
 - `/gallery`: `GalleryPage`, responsive image grid/lightbox, pagination and empty/error states.
 - `/contact`: `ContactPage`, details, hours, social/booking links, accessible map image and attribution.
-- `/staff/login`: `StaffLoginPage`; reachable only from a low-emphasis footer link and direct URL.
-- `/staff/pricelist`: `PricelistEditorPage`, category/item CRUD, reorder, publish state, optimistic-safe save feedback.
-- `/staff/settings`: `SiteSettingsPage`, business name/address/phone/email, opening hours, social links, booking URL, logo, and map asset references.
-- `/staff/password`: `ChangePasswordPage`, current/new/confirmation validation, logout-after-change policy.
+- `/pricelist`: a direct link to the studio's Square services and booking page.
 
 Shared components: `SiteHeader`, `SiteFooter`, `BookingButton`, `LoadingState`, `ErrorState`, `ConfirmDialog`, `ImageLightbox`, `AuthGuard`, `UnsavedChangesGuard`, and API/interceptor services.
 
 ## 7. Security, Privacy & Operational Risks
 
-- Hash passwords with Argon2id/bcrypt; never log credentials. Use protected GitHub Actions secrets for the one-time initial admin phone number and bootstrap password, pass them only to a controlled bootstrap/migration command, require a password change after first login, and never bake them into images or committed configuration.
-- Prefer secure, HttpOnly, SameSite cookies with short-lived sessions, CSRF tokens, rotation/revocation, and HTTPS-only production cookies. If stateless tokens are selected, use short-lived access tokens and rotated refresh tokens stored hashed.
-- Rate-limit login/manual scrape routes, enforce generic login errors, add lockout/backoff, validate all input server-side, and configure strict CORS, CSP, HSTS, frame and MIME protections.
-- Keep database, session, and scraper credentials in a root-readable Droplet secrets file outside the repository, with GitHub Actions protected-environment secrets limited to deployment. No secrets may appear in the repository, Docker layers, logs, or frontend bundles. Prefer narrowly scoped deployment credentials, firewall-restricted SSH keys, and regular credential rotation. Do not expose PostgreSQL directly to the public internet; allow only the Droplet's private/network access and an explicitly controlled administrator path.
+- Keep database and scraper credentials in a root-readable Droplet secrets file outside the repository, with GitHub Actions protected-environment secrets limited to deployment. No secrets may appear in the repository, Docker layers, logs, or frontend bundles. Do not expose PostgreSQL directly to the public internet.
 - Instagram scraping can violate Instagram terms, robots expectations, rate limits, or account rules; obtain owner/legal approval, use public data only by default, throttle, cache, identify the user agent, provide a kill switch, and be prepared to replace it with an approved feed/API.
 - Scraped media/captions and the map image may have copyright/privacy restrictions. Store only approved media, preserve attribution where required, obtain map-image license/attribution, and support takedown/deletion.
 - Square content may change; do not scrape it in production without permission. Treat manual entry/import as the source of truth and link to Square for booking.
@@ -179,9 +160,9 @@ Shared components: `SiteHeader`, `SiteFooter`, `BookingButton`, `LoadingState`, 
 
 ## 8. Testing & Quality Plan
 
-- Backend unit tests for pricing validation, auth/session policy, authorization, scraper deduplication, retry/backoff, and settings.
+- Backend unit tests for gallery access, readiness, scraper deduplication, retry/backoff, and migration behavior.
 - API integration tests with disposable PostgreSQL and a temporary local media directory; contract tests generated from OpenAPI.
-- Angular unit/component tests, route-guard tests, HTTP interceptor tests, and Playwright end-to-end tests for public navigation, login, edit, password change, and error states.
+- Angular unit/component tests and Playwright end-to-end tests for public navigation, Square booking links, gallery loading, and error states.
 - Worker tests with mocked Instagram responses, multi-image carousel fixtures, video-thumbnail fixtures, rate-limit/error scenarios, idempotent reruns, the 1,000-asset limit, and retention cleanup.
 - Accessibility checks with axe/Playwright; responsive smoke tests at mobile/tablet/desktop breakpoints.
 - CI security scans for dependencies, containers, secrets, and static analysis; backup/restore and migration rehearsal before production.

@@ -83,8 +83,8 @@
         "header": "Backend features",
         "question": "Describe the API and authentication behavior.",
         "multiSelect": false,
-        "answer": "FastAPI JSON API for public pricelist, gallery, contact configuration, email/password login, session or token validation, pricelist CRUD, password change, health checks, and scraper administration/status.",
-        "recommendedChoice": "FastAPI with secure cookie-based sessions and role-protected admin routes",
+        "answer": "FastAPI JSON API for gallery metadata, media, health/readiness checks, and scraper-run records; services and contact details are maintained outside the database.",
+        "recommendedChoice": "FastAPI with public gallery and health endpoints",
         "allowFreeformInput": true
       }
     },

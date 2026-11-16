@@ -1,0 +1,145 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - production
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to DigitalOcean Droplet
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Validate Compose files
+        run: docker compose -f docker-compose.production.yml config -q
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DO_SSH }}
+          DO_HOST: ${{ secrets.DO_HOST }}
+        run: |
+          set -euo pipefail
+
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+          ssh-keyscan -H "$DO_HOST" >> "$HOME/.ssh/known_hosts"
+
+      - name: Deploy to Droplet
+        shell: bash
+        env:
+          DO_HOST: ${{ secrets.DO_HOST }}
+          DO_USER: ${{ secrets.DO_USER }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ROOT_DOMAIN: ${{ secrets.ROOT_DOMAIN }}
+          CF_ORIGIN_CERT: ${{ secrets.CF_ORIGIN_CERT }}
+          CF_ORIGIN_KEY: ${{ secrets.CF_ORIGIN_KEY }}
+        run: |
+          set -euo pipefail
+
+          database_url_b64="$(printf '%s' "$DATABASE_URL" | base64 -w0)"
+          cf_cert_b64="$(printf '%s' "$CF_ORIGIN_CERT" | base64 -w0)"
+          cf_key_b64="$(printf '%s' "$CF_ORIGIN_KEY" | base64 -w0)"
+          nginx_conf_b64="$(base64 -w0 deploy/nginx.conf)"
+
+          ssh \
+            -i "$HOME/.ssh/deploy_key" \
+            "$DO_USER@$DO_HOST" \
+            "DATABASE_URL_B64='$database_url_b64' \
+             ROOT_DOMAIN='$ROOT_DOMAIN' \
+             CF_CERT_B64='$cf_cert_b64' \
+             CF_KEY_B64='$cf_key_b64' \
+             NGINX_CONF_B64='$nginx_conf_b64' \
+             bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+
+          app_dir=/opt/hairdresser-website
+          env_file="$app_dir/.env"
+          cert_dir=/etc/ssl/cloudflare
+          nginx_site=/etc/nginx/sites-available/jewelessencehairstudio
+
+          sudo mkdir -p "$app_dir" "$cert_dir"
+          sudo chown -R "$USER:$USER" "$app_dir"
+
+          if [ ! -d "$app_dir/.git" ]; then
+            git clone \
+              --branch production \
+              https://github.com/cynthiadaf/hairdresser-website.git \
+              "$app_dir"
+          fi
+
+          cd "$app_dir"
+          git fetch origin production
+          git reset --hard origin/production
+
+          database_url="$(printf '%s' "$DATABASE_URL_B64" | base64 -d)"
+
+          {
+            printf 'DATABASE_URL=%s\n' "$database_url"
+            printf 'ROOT_DOMAIN=%s\n' "$ROOT_DOMAIN"
+            printf 'API_CORS_ORIGINS=https://%s\n' "$ROOT_DOMAIN"
+            printf 'MEDIA_ROOT=/data/media\n'
+            printf 'SCRAPER_ENABLED=true\n'
+            printf 'SCRAPER_INTERVAL_SECONDS=86400\n'
+          } > "$env_file"
+          chmod 600 "$env_file"
+
+          printf '%s' "$CF_CERT_B64" \
+            | base64 -d \
+            | sudo tee "$cert_dir/origin.pem" >/dev/null
+          printf '%s' "$CF_KEY_B64" \
+            | base64 -d \
+            | sudo tee "$cert_dir/origin-key.pem" >/dev/null
+          sudo chmod 644 "$cert_dir/origin.pem"
+          sudo chmod 600 "$cert_dir/origin-key.pem"
+
+          printf '%s' "$NGINX_CONF_B64" \
+            | base64 -d \
+            | sudo tee "$nginx_site" >/dev/null
+
+          sudo ln -sfn \
+            "$nginx_site" \
+            /etc/nginx/sites-enabled/jewelessencehairstudio
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo nginx -t
+          sudo systemctl reload nginx
+
+          docker compose \
+            -f docker-compose.production.yml \
+            --env-file "$env_file" \
+            up -d --build --remove-orphans
+
+          for attempt in 1 2 3 4 5 6 7 8 9 10; do
+            if curl --fail --silent http://127.0.0.1:8080/api/v1/health; then
+              printf '\n'
+              break
+            fi
+            if [ "$attempt" -eq 10 ]; then
+              docker compose \
+                -f docker-compose.production.yml \
+                --env-file "$env_file" \
+                ps
+              exit 1
+            fi
+            sleep 5
+          done
+
+          docker compose \
+            -f docker-compose.production.yml \
+            --env-file "$env_file" \
+            ps
+          REMOTE_SCRIPT
