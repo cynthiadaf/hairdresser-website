@@ -72,7 +72,13 @@ jobs:
           cert_dir=/etc/ssl/cloudflare
           nginx_site=/etc/nginx/sites-available/jewelessencehairstudio
 
+          if ! command -v nginx >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nginx
+          fi
+
           sudo mkdir -p "$app_dir" "$cert_dir"
+          sudo mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
           sudo chown -R "$USER:$USER" "$app_dir"
 
           if [ ! -d "$app_dir/.git" ]; then
@@ -115,6 +121,7 @@ jobs:
             "$nginx_site" \
             /etc/nginx/sites-enabled/jewelessencehairstudio
           sudo rm -f /etc/nginx/sites-enabled/default
+          sudo systemctl enable --now nginx
           sudo nginx -t
           sudo systemctl reload nginx
 
