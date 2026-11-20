@@ -8,10 +8,6 @@ import { ApiService, GalleryItem } from "../core/api.service";
   template: `<section class="page-heading">
       <p class="eyebrow">Studio journal</p>
       <h1>Gallery</h1>
-      <p>
-        A visual record of approved work, kept locally for a fast and reliable
-        experience.
-      </p>
     </section>
     <section
       *ngIf="loading || error || !items.length"
